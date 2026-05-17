@@ -115,19 +115,18 @@ def reset_output_dirs(output_root: Path) -> None:
 
 
 def split_counts(total: int) -> tuple[int, int]:
+    """Split without caps: use all images with an 80/20 split per class."""
     if total <= 0:
         return 0, 0
-    if total == 1:
-        return 1, 0
-    if 2 <= total <= 4:
-        val_count = 1
-        return total - val_count, val_count
 
     train_count = int(total * TRAIN_RATIO)
     val_count = total - train_count
-    if val_count == 0:
-        val_count = 1
-        train_count = total - 1
+
+    # Keep weak classes (never drop images): if rounding makes train=0, keep 1 in train.
+    if train_count == 0:
+        train_count = 1
+        val_count = total - 1
+
     return train_count, val_count
 
 
@@ -198,6 +197,13 @@ def build_dataset(root: Path) -> None:
 
         train_images = images[:train_count]
         val_images = images[train_count : train_count + val_count]
+
+        # Sanity check: ensure every available image is used exactly once (no per-class caps).
+        if len(train_images) + len(val_images) != total_available:
+            raise RuntimeError(
+                f"Split mismatch for class {class_name}: total={total_available}, "
+                f"train={len(train_images)}, val={len(val_images)}"
+            )
 
         for src in train_images:
             shutil.copy2(src, output_root / "train" / class_name / src.name)
